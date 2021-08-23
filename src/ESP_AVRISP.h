@@ -1,29 +1,14 @@
-/*
-AVR In-System Programming over WiFi for ESP8266
-Copyright (c) Kiril Zyapkov <kiril@robotev.com>
-
-Original version:
-    ArduinoISP version 04m3
-    Copyright (c) 2008-2011 Randall Bohn
-    If you require a license, see
-        http://www.opensource.org/licenses/bsd-license.php
-*/
-
 #ifndef _ESP_AVRISP_H
 #define _ESP_AVRISP_H
 
 #include <Arduino.h>
-#ifdef ESP8266
 #include <ESP8266WiFi.h>
-#else
-#include <WiFi.h>
-#endif
 
 // uncomment if you use an n-mos to level-shift the reset line
 // #define AVRISP_ACTIVE_HIGH_RESET
 
 // SPI clock frequency in Hz
-#define AVRISP_SPI_FREQ   300e3
+#define AVRISP_SPI_FREQ   125e3
 
 // programmer states
 typedef enum {
@@ -76,7 +61,7 @@ protected:
 
     inline void _reject_incoming(void);     // reject any incoming tcp connections
 
-    int avrisp(void);           // handle incoming STK500 commands
+    void avrisp(void);           // handle incoming STK500 commands
 
     uint8_t getch(void);        // retrieve a character from the remote end
     uint8_t spi_transaction(uint8_t, uint8_t, uint8_t, uint8_t);
@@ -121,6 +106,8 @@ protected:
     uint8_t buff[256];
 
     int error = 0;
+
+    // Are we in program mode, if so we want to stop program mode when the client disconnects.
     bool pmode = 0;
 
     // address for reading and writing, set by 'U' command

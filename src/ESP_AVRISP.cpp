@@ -1,21 +1,8 @@
-/*
-AVR In-System Programming over WiFi for ESP
-Copyright (c) Kiril Zyapkov <kiril@robotev.com>
-Converted for ESP32 Larry Bernstone <lbernstone@gmail.com>
-
-Original version:
-    ArduinoISP version 04m3
-    Copyright (c) 2008-2011 Randall Bohn
-    If you require a license, see
-        http://www.opensource.org/licenses/bsd-license.php
-*/
-
-
 #include <Arduino.h>
 #include <SPI.h>
 #include "ESP_AVRISP.h"
 #include "command.h"
-#ifdef ESP8266
+
 #include <ESP8266WiFi.h>
 #include <pgmspace.h>
 extern "C" {
@@ -30,9 +17,6 @@ extern "C" {
   #undef free
 #endif
 #define free        os_free
-#else
-#include <WiFi.h>
-#endif
 
 // #define AVRISP_DEBUG(fmt, ...)     os_printf("[AVRP] " fmt "\r\n", ##__VA_ARGS__ )
 #define AVRISP_DEBUG(...)
@@ -73,7 +57,9 @@ void ESP_AVRISP::setReset(bool rst) {
 AVRISPState_t ESP_AVRISP::update() {
     switch (_state) {
         case AVRISP_STATE_IDLE: {
+            // Check if a client is connecting.
             if (_server.hasClient()) {
+                // Accept client connection
                 _client = _server.available();
                 _client.setNoDelay(true);
                 ip4_addr_t lip;
@@ -81,16 +67,19 @@ AVRISPState_t ESP_AVRISP::update() {
                 AVRISP_DEBUG("client connect %d.%d.%d.%d:%d", IP2STR(&lip), _client.remotePort());
                 _client.setTimeout(100); // for getch()
                 _state = AVRISP_STATE_PENDING;
+                // Reject any other clients trying to connect.
                 _reject_incoming();
             }
             break;
         }
         case AVRISP_STATE_PENDING:
         case AVRISP_STATE_ACTIVE: {
-            // handle disconnect
+            // Check for client disconnect
             if (!_client.connected()) {
+                // Stop client
                 _client.stop();
                 AVRISP_DEBUG("client disconnect");
+                // Reset chip communication
                 if (pmode) {
                     SPI.end();
                     pmode = 0;
@@ -98,6 +87,7 @@ AVRISPState_t ESP_AVRISP::update() {
                 setReset(_reset_state);
                 _state = AVRISP_STATE_IDLE;
             } else {
+                // Reject any other clients trying to connect.
                 _reject_incoming();
             }
             break;
@@ -436,7 +426,7 @@ void ESP_AVRISP::read_signature() {
 
 // It seems ArduinoISP is based on the original STK500 (not v2)
 // but implements only a subset of the commands.
-int ESP_AVRISP::avrisp() {
+void ESP_AVRISP::avrisp() {
     uint8_t data, low, high;
     uint8_t ch = getch();
     // AVRISP_DEBUG("CMD 0x%02x", ch);
@@ -520,16 +510,17 @@ int ESP_AVRISP::avrisp() {
     case Cmnd_STK_READ_SIGN:
         read_signature();
         break;
-        // expecting a command, not Sync_CRC_EOP
-        // this is how we can get back in sync
+
+    // expecting a command, not Sync_CRC_EOP
+    // this is how we can get back in sync
     case Sync_CRC_EOP:       // 0x20, space
         error++;
         _client.print((char) Resp_STK_NOSYNC);
         break;
 
-      // anything else we will return STK_UNKNOWN
+    // anything else we will return STK_UNKNOWN
     default:
-        AVRISP_DEBUG("??!?");
+        AVRISP_DEBUG("Unexpected command: 0x%02x", ch);
         error++;
         if (Sync_CRC_EOP == getch()) {
             _client.print((char)Resp_STK_UNKNOWN);
