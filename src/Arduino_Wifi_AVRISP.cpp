@@ -1,12 +1,7 @@
 #include <SPI.h>
 #include <ESP_AVRISP.h>
-#ifdef ESP8266
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
-#else
-#include <WiFi.h>
-#include <ESPmDNS.h>
-#endif
 
 const char* host = "esp-avrisp";
 const char* ssid = "Milkrun";
