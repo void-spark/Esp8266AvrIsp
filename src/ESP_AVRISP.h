@@ -64,6 +64,7 @@ protected:
     void avrisp(void);           // handle incoming STK500 commands
 
     uint8_t getch(void);        // retrieve a character from the remote end
+    void putch(uint8_t value);
     uint8_t spi_transaction(uint8_t, uint8_t, uint8_t, uint8_t);
     void empty_reply(void);
     void breply(uint8_t);

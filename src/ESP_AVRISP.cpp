@@ -31,8 +31,8 @@ extern "C" {
 #define beget16(addr) (*addr * 256 + *(addr+1))
 
 ESP_AVRISP::ESP_AVRISP(uint16_t port, uint8_t reset_pin, uint32_t spi_freq, bool reset_state, bool reset_activehigh):
-    _reset_pin(reset_pin), _reset_state(reset_state), _spi_freq(spi_freq), _reset_activehigh(reset_activehigh),
-    _server(WiFiServer(port)), _state(AVRISP_STATE_IDLE)
+    _spi_freq(spi_freq), _server(WiFiServer(port)), _state(AVRISP_STATE_IDLE), _reset_pin(reset_pin),
+    _reset_state(reset_state), _reset_activehigh(reset_activehigh)     
 {
     pinMode(_reset_pin, OUTPUT);
     setReset(_reset_state);
@@ -126,6 +126,10 @@ uint8_t ESP_AVRISP::getch() {
     return b;
 }
 
+void ESP_AVRISP::putch(uint8_t value) {
+    _client.write(value);
+}
+
 void ESP_AVRISP::fill(int n) {
     // AVRISP_DEBUG("fill(%u)", n);
     for (int x = 0; x < n; x++) {
@@ -143,11 +147,11 @@ uint8_t ESP_AVRISP::spi_transaction(uint8_t a, uint8_t b, uint8_t c, uint8_t d) 
 
 void ESP_AVRISP::empty_reply() {
     if (Sync_CRC_EOP == getch()) {
-        _client.print((char)Resp_STK_INSYNC);
-        _client.print((char)Resp_STK_OK);
+        putch(Resp_STK_INSYNC);
+        putch(Resp_STK_OK);
     } else {
         error++;
-        _client.print((char)Resp_STK_NOSYNC);
+        putch(Resp_STK_NOSYNC);
     }
 }
 
@@ -157,12 +161,11 @@ void ESP_AVRISP::breply(uint8_t b) {
         resp[0] = Resp_STK_INSYNC;
         resp[1] = b;
         resp[2] = Resp_STK_OK;
-        _client.write((const uint8_t *)resp, (size_t)3);
+        _client.write(resp, 3);
     } else {
         error++;
-        _client.print((char)Resp_STK_NOSYNC);
+        putch(Resp_STK_NOSYNC);
     }
-
 }
 
 void ESP_AVRISP::get_parameter(uint8_t c) {
@@ -209,11 +212,7 @@ void ESP_AVRISP::set_parameters() {
 }
 
 void ESP_AVRISP::start_pmode() {
-#ifdef SPI_PINS
-    SPI.begin(SPI_PINS);
-#else
     SPI.begin();
-#endif
     SPI.setFrequency(_spi_freq);
     SPI.setHwCs(false);
 
@@ -235,7 +234,6 @@ void ESP_AVRISP::end_pmode() {
 }
 
 void ESP_AVRISP::universal() {
-    int w;
     uint8_t ch;
 
     fill(4);
@@ -267,16 +265,14 @@ int ESP_AVRISP::addr_page(int addr) {
 
 
 void ESP_AVRISP::write_flash(int length) {
-    uint32_t started = millis();
-
     fill(length);
 
     if (Sync_CRC_EOP == getch()) {
-        _client.print((char) Resp_STK_INSYNC);
-        _client.print((char) write_flash_pages(length));
+        putch(Resp_STK_INSYNC);
+        putch(write_flash_pages(length));
     } else {
       error++;
-      _client.print((char) Resp_STK_NOSYNC);
+      putch(Resp_STK_NOSYNC);
     }
 }
 
@@ -333,7 +329,6 @@ void ESP_AVRISP::program_page() {
     int length = 256 * getch();
     length += getch();
     char memtype = getch();
-    char buf[100];
     // flash memory @here, (length) bytes
     if (memtype == 'F') {
         write_flash(length);
@@ -341,17 +336,17 @@ void ESP_AVRISP::program_page() {
     }
 
     if (memtype == 'E') {
-        result = (char)write_eeprom(length);
+        result = write_eeprom(length);
         if (Sync_CRC_EOP == getch()) {
-            _client.print((char) Resp_STK_INSYNC);
-            _client.print(result);
+            putch(Resp_STK_INSYNC);
+            putch(result);
         } else {
             error++;
-            _client.print((char) Resp_STK_NOSYNC);
+            putch(Resp_STK_NOSYNC);
         }
         return;
     }
-    _client.print((char)Resp_STK_FAILED);
+    putch(Resp_STK_FAILED);
   return;
 
 }
@@ -392,16 +387,15 @@ void ESP_AVRISP::eeprom_read_page(int length) {
 }
 
 void ESP_AVRISP::read_page() {
-    char result = (char)Resp_STK_FAILED;
     int length = 256 * getch();
     length += getch();
     char memtype = getch();
     if (Sync_CRC_EOP != getch()) {
         error++;
-        _client.print((char) Resp_STK_NOSYNC);
+        putch(Resp_STK_NOSYNC);
         return;
     }
-    _client.print((char) Resp_STK_INSYNC);
+    putch(Resp_STK_INSYNC);
     if (memtype == 'F') flash_read_page(length);
     if (memtype == 'E') eeprom_read_page(length);
     return;
@@ -410,27 +404,26 @@ void ESP_AVRISP::read_page() {
 void ESP_AVRISP::read_signature() {
     if (Sync_CRC_EOP != getch()) {
         error++;
-        _client.print((char) Resp_STK_NOSYNC);
+        putch(Resp_STK_NOSYNC);
         return;
     }
-    _client.print((char) Resp_STK_INSYNC);
+    putch(Resp_STK_INSYNC);
 
     uint8_t high = spi_transaction(0x30, 0x00, 0x00, 0x00);
-    _client.print((char) high);
+    putch(high);
     uint8_t middle = spi_transaction(0x30, 0x00, 0x01, 0x00);
-    _client.print((char) middle);
+    putch(middle);
     uint8_t low = spi_transaction(0x30, 0x00, 0x02, 0x00);
-    _client.print((char) low);
-    _client.print((char) Resp_STK_OK);
+    putch(low);
+    putch(Resp_STK_OK);
 }
 
 // It seems ArduinoISP is based on the original STK500 (not v2)
 // but implements only a subset of the commands.
 void ESP_AVRISP::avrisp() {
-    uint8_t data, low, high;
-    uint8_t ch = getch();
+    const uint8_t cmd = getch();
     // AVRISP_DEBUG("CMD 0x%02x", ch);
-    switch (ch) {
+    switch (cmd) {
     case Cmnd_STK_GET_SYNC:
         error = 0;
         empty_reply();
@@ -438,9 +431,9 @@ void ESP_AVRISP::avrisp() {
 
     case Cmnd_STK_GET_SIGN_ON:
         if (getch() == Sync_CRC_EOP) {
-            _client.print((char) Resp_STK_INSYNC);
-            _client.print(F("AVR ISP")); // AVR061 says "AVR STK"?
-            _client.print((char) Resp_STK_OK);
+            putch(Resp_STK_INSYNC);
+            _client.write("AVR ISP"); // AVR061 says "AVR STK"?
+            putch(Resp_STK_OK);
         }
         break;
 
@@ -473,15 +466,19 @@ void ESP_AVRISP::avrisp() {
 
     // XXX: not implemented!
     case Cmnd_STK_PROG_FLASH:
-        low = getch();
-        high = getch();
-        empty_reply();
+        {
+            const uint8_t low = getch();
+            const uint8_t high = getch();
+            empty_reply();
+        }
         break;
 
     // XXX: not implemented!
-    case Cmnd_STK_PROG_DATA:
-        data = getch();
-        empty_reply();
+        case Cmnd_STK_PROG_DATA:
+        {
+            const uint8_t data = getch();
+            empty_reply();
+        }
         break;
 
     case Cmnd_STK_PROG_PAGE:
@@ -515,17 +512,17 @@ void ESP_AVRISP::avrisp() {
     // this is how we can get back in sync
     case Sync_CRC_EOP:       // 0x20, space
         error++;
-        _client.print((char) Resp_STK_NOSYNC);
+        putch(Resp_STK_NOSYNC);
         break;
 
-    // anything else we will return STK_UNKNOWN
+    // Anything else we will return STK_UNKNOWN
     default:
         AVRISP_DEBUG("Unexpected command: 0x%02x", ch);
         error++;
         if (Sync_CRC_EOP == getch()) {
-            _client.print((char)Resp_STK_UNKNOWN);
+            putch(Resp_STK_UNKNOWN);
         } else {
-            _client.print((char)Resp_STK_NOSYNC);
+            putch(Resp_STK_NOSYNC);
         }
   }
 }
