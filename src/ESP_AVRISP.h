@@ -2,7 +2,6 @@
 #define _ESP_AVRISP_H
 
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
 
 // uncomment if you use an n-mos to level-shift the reset line
 // #define AVRISP_ACTIVE_HIGH_RESET
@@ -10,12 +9,12 @@
 // SPI clock frequency in Hz
 #define AVRISP_SPI_FREQ   125e3
 
-// programmer states
 typedef enum {
-    AVRISP_STATE_IDLE = 0,    // no active TCP session
-    AVRISP_STATE_PENDING,     // TCP connected, pending SPI activation
-    AVRISP_STATE_ACTIVE       // programmer is active and owns the SPI bus
-} AVRISPState_t;
+    AVRISP_RES_OK = 0,   // Everything went ok
+    AVRISP_RES_ERR,      // An error occured
+    AVRISP_RES_END       // Last cmd ended programming, connection can be closed.
+} AVRISPResult_t;
+
 
 // stk500 parameters
 typedef struct {
@@ -37,64 +36,40 @@ typedef struct {
 
 class ESP_AVRISP {
 public:
-    ESP_AVRISP(uint16_t port, uint8_t reset_pin, uint32_t spi_freq=AVRISP_SPI_FREQ, bool reset_state=false, bool reset_activehigh=false);
-
-    void begin();
-
-    // set the SPI clock frequency
-    void setSpiFrequency(uint32_t);
+    ESP_AVRISP(uint8_t reset_pin, uint32_t spi_freq=AVRISP_SPI_FREQ, bool reset_state=false, bool reset_activehigh=false);
 
     // control the state of the RESET pin of the target
     // see AVRISP_ACTIVE_HIGH_RESET
     void setReset(bool);
 
-    // check for pending clients if IDLE, check for disconnect otherwise
-    // returns the updated state
-    AVRISPState_t update();
+    // Handle one incoming STK500 command
+    AVRISPResult_t handleCmd(Stream& client);           
 
-    // transition to ACTIVE if PENDING
-    // serve STK500 commands from buffer if ACTIVE
-    // returns the updated state
-    AVRISPState_t serve();
+    // exit program mode
+    void end_pmode(void);            
 
 protected:
 
-    inline void _reject_incoming(void);     // reject any incoming tcp connections
-
-    void avrisp(void);           // handle incoming STK500 commands
-
-    uint8_t getch(void);        // retrieve a character from the remote end
-    void putch(uint8_t value);
-    uint8_t spi_transaction(uint8_t, uint8_t, uint8_t, uint8_t);
-    void empty_reply(void);
-    void breply(uint8_t);
-
-    void get_parameter(uint8_t);
     void set_parameters(void);
     int addr_page(int);
     void flash(uint8_t, int, uint8_t);
-    void write_flash(int);
+    AVRISPResult_t write_flash(Stream& client, int length);
     uint8_t write_flash_pages(int length);
-    uint8_t write_eeprom(int length);
-    uint8_t write_eeprom_chunk(int start, int length);
+    uint8_t write_eeprom(Stream& client, int length);
+    uint8_t write_eeprom_chunk(Stream& client, int start, int length);
     void commit(int addr);
-    void program_page();
-    uint8_t flash_read(uint8_t hilo, int addr);
-    void flash_read_page(int length);
-    void eeprom_read_page(int length);
-    void read_page();
-    void read_signature();
+    AVRISPResult_t program_page(Stream& client);
+    void flash_read_page(Stream& client,int length);
+    void eeprom_read_page(Stream& client,int length);
+    AVRISPResult_t read_page(Stream& client);
 
-    void universal(void);
+    AVRISPResult_t universal(Stream& client);
 
-    void fill(int);             // fill the buffer with n bytes
-    void start_pmode(void);     // enter program mode
-    void end_pmode(void);       // exit program mode
+    void fill(Stream& client, int);  // fill the buffer with n bytes
+    void start_pmode(void);          // enter program mode
 
     uint32_t _spi_freq;
-    WiFiServer _server;
-    WiFiClient _client;
-    AVRISPState_t _state;
+
     uint8_t _reset_pin;
     bool _reset_state;
     bool _reset_activehigh;
