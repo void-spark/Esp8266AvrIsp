@@ -91,8 +91,6 @@ protected:
     void start_pmode(void);     // enter program mode
     void end_pmode(void);       // exit program mode
 
-    inline bool _resetLevel(bool reset_state) { return reset_state == _reset_activehigh; }
-
     uint32_t _spi_freq;
     WiFiServer _server;
     WiFiClient _client;

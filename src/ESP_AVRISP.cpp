@@ -4,19 +4,6 @@
 #include "command.h"
 
 #include <ESP8266WiFi.h>
-#include <pgmspace.h>
-extern "C" {
-    #include "user_interface.h"
-    #include "memory"
-}
-#ifdef malloc
-  #undef malloc
-#endif
-#define malloc      os_malloc
-#ifdef free
-  #undef free
-#endif
-#define free        os_free
 
 // #define AVRISP_DEBUG(fmt, ...)     os_printf("[AVRP] " fmt "\r\n", ##__VA_ARGS__ )
 #define AVRISP_DEBUG(...)
@@ -35,6 +22,8 @@ ESP_AVRISP::ESP_AVRISP(uint16_t port, uint8_t reset_pin, uint32_t spi_freq, bool
     _reset_state(reset_state), _reset_activehigh(reset_activehigh)     
 {
     pinMode(_reset_pin, OUTPUT);
+
+    // Start with the default reset state.
     setReset(_reset_state);
 }
 
@@ -49,9 +38,8 @@ void ESP_AVRISP::setSpiFrequency(uint32_t freq) {
     }
 }
 
-void ESP_AVRISP::setReset(bool rst) {
-    _reset_state = rst;
-    digitalWrite(_reset_pin, _resetLevel(_reset_state));
+void ESP_AVRISP::setReset(bool value) {
+    digitalWrite(_reset_pin, value == _reset_activehigh);
 }
 
 AVRISPState_t ESP_AVRISP::update() {
@@ -80,11 +68,7 @@ AVRISPState_t ESP_AVRISP::update() {
                 _client.stop();
                 AVRISP_DEBUG("client disconnect");
                 // Reset chip communication
-                if (pmode) {
-                    SPI.end();
-                    pmode = 0;
-                }
-                setReset(_reset_state);
+                end_pmode();
                 _state = AVRISP_STATE_IDLE;
             } else {
                 // Reject any other clients trying to connect.
@@ -212,25 +196,42 @@ void ESP_AVRISP::set_parameters() {
 }
 
 void ESP_AVRISP::start_pmode() {
+
+    // Set up SPI
     SPI.begin();
     SPI.setFrequency(_spi_freq);
     SPI.setHwCs(false);
 
-    // try to sync the bus
-    SPI.transfer(0x00);
-    digitalWrite(_reset_pin, _resetLevel(false));
-    delayMicroseconds(50);
-    digitalWrite(_reset_pin, _resetLevel(true));
+    if(!_reset_state) {
+        // Send a reset inactive pulse, so start with reset active.
+        // Only need this if reset is inactive by default.
+        setReset(true); 
+        delay(30);
+    }
+
+    // Send pulse, for attiny85 at least 2.5μs + 2 clocks
+    setReset(false);
+    delayMicroseconds(10);
+    setReset(true);
+
+    // Wait before first command, at least 20ms according to spec.
     delay(30);
 
+    // Send Programming Enable
     spi_transaction(0xAC, 0x53, 0x00, 0x00);
     pmode = 1;
 }
 
 void ESP_AVRISP::end_pmode() {
-    SPI.end();
-    setReset(_reset_state);
-    pmode = 0;
+    // Only need revert things if we actually started programming mode.
+    if (pmode) {
+        SPI.end();
+
+        // Go back to default reset state
+        setReset(_reset_state);
+
+        pmode = 0;
+    }
 }
 
 void ESP_AVRISP::universal() {
@@ -418,8 +419,7 @@ void ESP_AVRISP::read_signature() {
     putch(Resp_STK_OK);
 }
 
-// It seems ArduinoISP is based on the original STK500 (not v2)
-// but implements only a subset of the commands.
+// We implement a subset of the STK500 (not v2) commands.
 void ESP_AVRISP::avrisp() {
     const uint8_t cmd = getch();
     // AVRISP_DEBUG("CMD 0x%02x", ch);
@@ -432,7 +432,10 @@ void ESP_AVRISP::avrisp() {
     case Cmnd_STK_GET_SIGN_ON:
         if (getch() == Sync_CRC_EOP) {
             putch(Resp_STK_INSYNC);
-            _client.write("AVR ISP"); // AVR061 says "AVR STK"?
+            // Use a different message from STK500 ("AVR STK"),
+            // I guess to allow callers to know we're different.
+            // As far as I know avrdude doesn't even use this
+            _client.write("AVR ISP");
             putch(Resp_STK_OK);
         }
         break;
