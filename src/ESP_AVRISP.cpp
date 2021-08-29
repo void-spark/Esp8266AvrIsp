@@ -102,7 +102,9 @@ AVRISPResult_t get_parameter(Stream& client) {
     }
 }
 
-void ESP_AVRISP::set_parameters() {
+AVRISPResult_t ESP_AVRISP::set_parameters(Stream& client) {
+    fill(client, 20);
+
     // call this after reading paramter packet into buff[]
     param.devicecode = buff[0];
     param.revision   = buff[1];
@@ -124,9 +126,11 @@ void ESP_AVRISP::set_parameters() {
                     + buff[17] * 0x00010000
                     + buff[18] * 0x00000100
                     + buff[19];
+
+    return empty_reply(client);
 }
 
-void ESP_AVRISP::start_pmode() {
+AVRISPResult_t ESP_AVRISP::start_pmode(Stream& client) {
 
     // Set up SPI
     SPI.begin();
@@ -151,6 +155,8 @@ void ESP_AVRISP::start_pmode() {
     // Send Programming Enable
     spi_transaction(0xAC, 0x53, 0x00, 0x00);
     pmode = 1;
+
+    return empty_reply(client);
 }
 
 void ESP_AVRISP::end_pmode() {
@@ -371,9 +377,7 @@ AVRISPResult_t ESP_AVRISP::handleCmd(Stream& client) {
         break;
 
     case Cmnd_STK_SET_DEVICE:
-        fill(client, 20);
-        set_parameters();
-        if(empty_reply(client) != AVRISP_RES_OK) {
+        if(set_parameters(client) != AVRISP_RES_OK) {
             error++;
         }
         break;
@@ -386,8 +390,7 @@ AVRISPResult_t ESP_AVRISP::handleCmd(Stream& client) {
         break;
 
     case Cmnd_STK_ENTER_PROGMODE:
-        start_pmode();
-        if(empty_reply(client) != AVRISP_RES_OK) {
+        if(start_pmode(client) != AVRISP_RES_OK) {
             error++;
         }
         break;
@@ -429,11 +432,13 @@ AVRISPResult_t ESP_AVRISP::handleCmd(Stream& client) {
         break;
 
     case Cmnd_STK_READ_PAGE:
-        read_page(client);
+        if(read_page(client) != AVRISP_RES_OK) {
+            error++;
+        }
         break;
 
     case Cmnd_STK_UNIVERSAL:
-        if(universal(client)!= AVRISP_RES_OK) {
+        if(universal(client) != AVRISP_RES_OK) {
             error++;
         }
         break;

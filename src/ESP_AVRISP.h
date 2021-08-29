@@ -50,7 +50,7 @@ public:
 
 protected:
 
-    void set_parameters(void);
+    AVRISPResult_t set_parameters(Stream& client);
     int addr_page(int);
     void flash(uint8_t, int, uint8_t);
     AVRISPResult_t write_flash(Stream& client, int length);
@@ -66,7 +66,7 @@ protected:
     AVRISPResult_t universal(Stream& client);
 
     void fill(Stream& client, int);  // fill the buffer with n bytes
-    void start_pmode(void);          // enter program mode
+    AVRISPResult_t start_pmode(Stream& client); // enter program mode
 
     uint32_t _spi_freq;
 
